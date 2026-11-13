@@ -1,26 +1,19 @@
 import { router } from 'expo-router';
-import { useState } from 'react';
 
 import { QuickAddSheet } from '@hylink/ui';
 
-export default function QuickAddRoute() {
-  const [savedTitle, setSavedTitle] = useState<string | null>(null);
+import { useQuestContext } from '../src/features/quests/application/QuestContext';
 
-  if (savedTitle) {
-    return (
-      <QuickAddSheet
-        initialTitle={savedTitle}
-        confirmationMessage="Quest captured for this preview. Persistence arrives in the quest milestone."
-        onClose={() => router.back()}
-        onSave={() => router.back()}
-      />
-    );
-  }
+export default function QuickAddRoute() {
+  const { createQuest } = useQuestContext();
 
   return (
     <QuickAddSheet
       onClose={() => router.back()}
-      onSave={(title) => setSavedTitle(title)}
+      onSave={async (input) => {
+        await createQuest(input);
+        router.back();
+      }}
     />
   );
 }

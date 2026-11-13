@@ -1,4 +1,6 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+
+import type { QuestOccurrenceStatus, QuestStatus } from '@hylink/domain';
 
 import { colors, radius, spacing } from '../tokens';
 import { ParchmentCard } from './ParchmentCard';
@@ -6,20 +8,28 @@ import { ParchmentCard } from './ParchmentCard';
 interface QuestCardProps {
   readonly title: string;
   readonly detail: string;
-  readonly status: 'ready' | 'planned';
+  readonly status: QuestStatus | QuestOccurrenceStatus;
+  readonly onPress?: () => void;
+  readonly onToggleComplete?: () => void;
 }
 
-export function QuestCard({ title, detail, status }: QuestCardProps) {
-  const statusLabel = status === 'ready' ? 'Ready' : 'Planned';
+export function QuestCard({ title, detail, status, onPress, onToggleComplete }: QuestCardProps) {
+  const statusLabel = status[0]?.toUpperCase() + status.slice(1);
+  const completed = status === 'completed';
   return (
     <ParchmentCard accessibilityLabel={`${title}, ${statusLabel}`}>
-      <View style={styles.row}>
+      <Pressable accessibilityRole={onPress ? 'button' : undefined} disabled={!onPress} onPress={onPress} style={styles.row}>
         <View style={styles.copy}>
           <Text style={styles.title}>{title}</Text>
           <Text style={styles.detail}>{detail}</Text>
         </View>
         <View style={styles.badge}><Text style={styles.badgeText}>{statusLabel}</Text></View>
-      </View>
+      </Pressable>
+      {onToggleComplete ? (
+        <Pressable accessibilityRole="button" onPress={onToggleComplete} style={styles.action}>
+          <Text style={styles.actionText}>{completed ? 'Reopen' : 'Complete'}</Text>
+        </Pressable>
+      ) : null}
     </ParchmentCard>
   );
 }
@@ -31,5 +41,7 @@ const styles = StyleSheet.create({
   detail: { color: colors.mutedInk, fontSize: 14 },
   badge: { backgroundColor: colors.accent, borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs },
   badgeText: { color: colors.ink, fontSize: 12, fontWeight: '800' },
+  action: { alignItems: 'center', alignSelf: 'flex-start', borderColor: colors.pine, borderRadius: radius.sm, borderWidth: 1.5, justifyContent: 'center', minHeight: 44, paddingHorizontal: spacing.md },
+  actionText: { color: colors.pine, fontWeight: '800' },
 });
 

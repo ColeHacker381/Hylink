@@ -13,7 +13,7 @@ describe('QuickAddSheet', () => {
     await fireEvent.changeText(screen.getByLabelText('Quest title'), '  Pack lunch  ');
     await fireEvent.press(saveButton);
 
-    expect(onSave).toHaveBeenCalledWith('Pack lunch');
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ title: 'Pack lunch' }));
   });
 
   it('closes from the cancel action', async () => {
@@ -24,18 +24,20 @@ describe('QuickAddSheet', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('renders a confirmation state without another save action', async () => {
-    await render(
-      <QuickAddSheet
-        confirmationMessage="Quest captured."
-        initialTitle="Pack lunch"
-        onClose={jest.fn()}
-        onSave={jest.fn()}
-      />,
-    );
+  it('reveals advanced options and submits selected details', async () => {
+    const onSave = jest.fn();
+    await render(<QuickAddSheet onClose={jest.fn()} onSave={onSave} />);
+    await fireEvent.changeText(screen.getByLabelText('Quest title'), 'Train');
+    await fireEvent.press(screen.getByRole('button', { name: 'Advanced options' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'epic' }));
+    await fireEvent.changeText(screen.getByLabelText('Due date'), '2026-11-20');
+    await fireEvent.press(screen.getByRole('button', { name: 'Save quest' }));
 
-    expect(screen.getByRole('alert')).toHaveTextContent('Quest captured.');
-    expect(screen.queryByRole('button', { name: 'Save quest' })).toBeNull();
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'Train',
+      difficulty: 'epic',
+      dueAt: expect.any(String),
+    }));
   });
 });
 
