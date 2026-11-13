@@ -10,6 +10,7 @@ allowBuilds:
 
 minimumReleaseAgeExclude:
   - expo@58.0.25
+  - expo-sqlite@58.0.17
 
 onlyBuiltDependencies:
   - esbuild

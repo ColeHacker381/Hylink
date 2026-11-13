@@ -10,8 +10,9 @@
     "web": "pnpm --filter @hylink/mobile web",
     "typecheck": "pnpm -r --if-present typecheck",
     "lint": "eslint .",
-    "test": "pnpm test:unit && pnpm test:components",
+    "test": "pnpm test:unit && pnpm test:database && pnpm test:components",
     "test:unit": "pnpm --filter @hylink/domain test",
+    "test:database": "pnpm --filter @hylink/database test",
     "test:components": "pnpm --filter @hylink/ui test"
   },
   "devDependencies": {
