@@ -10,7 +10,7 @@ export interface SqliteConnection {
   runAsync(sql: string, ...params: readonly SqlValue[]): Promise<SqliteRunResult>;
   getFirstAsync<T>(sql: string, ...params: readonly SqlValue[]): Promise<T | null>;
   getAllAsync<T>(sql: string, ...params: readonly SqlValue[]): Promise<readonly T[]>;
-  withTransactionAsync(task: () => Promise<void>): Promise<void>;
+  withTransactionAsync<T>(task: (transaction: SqliteConnection) => Promise<T>): Promise<T>;
   closeAsync?(): Promise<void>;
 }
 

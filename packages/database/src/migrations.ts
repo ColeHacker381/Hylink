@@ -92,9 +92,9 @@ export async function migrateDatabase(connection: SqliteConnection, now = new Da
 
   for (const migration of migrations) {
     if (appliedIds.has(migration.id)) continue;
-    await connection.withTransactionAsync(async () => {
-      await connection.execAsync(migration.sql);
-      await connection.runAsync(
+    await connection.withTransactionAsync(async (transaction) => {
+      await transaction.execAsync(migration.sql);
+      await transaction.runAsync(
         'INSERT INTO schema_migrations (id, applied_at) VALUES (?, ?)',
         migration.id,
         now,

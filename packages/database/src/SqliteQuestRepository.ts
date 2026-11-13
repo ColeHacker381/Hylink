@@ -92,10 +92,10 @@ export class SqliteQuestRepository implements QuestRepository {
 
   async createQuest(quest: Quest, event: QuestDomainEvent): Promise<Quest> {
     return this.guard('create quest', async () => {
-      await this.connection.withTransactionAsync(async () => {
-        await this.insertQuest(quest);
-        await this.syncLinks(quest);
-        await this.insertEvent(event);
+      await this.connection.withTransactionAsync(async (transaction) => {
+        await this.insertQuest(transaction, quest);
+        await this.syncLinks(transaction, quest);
+        await this.insertEvent(transaction, event);
       });
       return quest;
     });
@@ -122,10 +122,10 @@ export class SqliteQuestRepository implements QuestRepository {
 
   async updateQuest(quest: Quest, event: QuestDomainEvent): Promise<Quest> {
     return this.guard('update quest', async () => {
-      await this.connection.withTransactionAsync(async () => {
-        await this.writeQuest(quest);
-        await this.syncLinks(quest);
-        await this.insertEvent(event);
+      await this.connection.withTransactionAsync(async (transaction) => {
+        await this.writeQuest(transaction, quest);
+        await this.syncLinks(transaction, quest);
+        await this.insertEvent(transaction, event);
       });
       return quest;
     });
@@ -149,9 +149,9 @@ export class SqliteQuestRepository implements QuestRepository {
 
   async archiveQuest(quest: Quest, event: QuestDomainEvent): Promise<Quest> {
     return this.guard('archive quest', async () => {
-      await this.connection.withTransactionAsync(async () => {
-        await this.writeQuest(quest);
-        await this.insertEvent(event);
+      await this.connection.withTransactionAsync(async (transaction) => {
+        await this.writeQuest(transaction, quest);
+        await this.insertEvent(transaction, event);
       });
       return quest;
     });
@@ -171,9 +171,9 @@ export class SqliteQuestRepository implements QuestRepository {
   async saveOccurrences(occurrences: readonly QuestOccurrence[]): Promise<void> {
     await this.guard('save quest occurrences', async () => {
       if (occurrences.length === 0) return;
-      await this.connection.withTransactionAsync(async () => {
+      await this.connection.withTransactionAsync(async (transaction) => {
         for (const occurrence of occurrences) {
-          await this.connection.runAsync(
+          await transaction.runAsync(
             `INSERT INTO quest_occurrences
               (id, quest_id, occurrence_key, scheduled_for, status, completed_at, created_at)
              VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -234,36 +234,37 @@ export class SqliteQuestRepository implements QuestRepository {
   ): Promise<{ readonly quest: Quest; readonly occurrence: QuestOccurrence | null; readonly eventCreated: boolean }> {
     return this.guard(operation, async () => {
       let eventCreated = false;
-      await this.connection.withTransactionAsync(async () => {
+      await this.connection.withTransactionAsync(async (transaction) => {
         if (occurrence) {
-          const current = await this.connection.getFirstAsync<{ readonly status: string }>(
-            'SELECT status FROM quest_occurrences WHERE id = ?',
-            occurrence.id,
-          );
-          if (current?.status === targetStatus) return;
-          await this.connection.runAsync(
-            'UPDATE quest_occurrences SET status = ?, completed_at = ? WHERE id = ?',
+          const update = await transaction.runAsync(
+            'UPDATE quest_occurrences SET status = ?, completed_at = ? WHERE id = ? AND status <> ?',
             occurrence.status,
             occurrence.completedAt,
             occurrence.id,
+            targetStatus,
           );
-          await this.writeQuest(quest);
+          if (update.changes === 0) return;
+          await this.writeQuest(transaction, quest);
         } else {
-          const current = await this.connection.getFirstAsync<{ readonly status: string }>(
-            'SELECT status FROM quests WHERE id = ?',
+          const update = await transaction.runAsync(
+            `UPDATE quests SET status = ?, completed_at = ?, updated_at = ?
+             WHERE id = ? AND status <> ?`,
+            quest.status,
+            quest.completedAt,
+            quest.updatedAt,
             quest.id,
+            targetStatus,
           );
-          if (current?.status === targetStatus) return;
-          await this.writeQuest(quest);
+          if (update.changes === 0) return;
         }
-        eventCreated = (await this.insertEvent(event)) > 0;
+        eventCreated = (await this.insertEvent(transaction, event)) > 0;
       });
       return { quest, occurrence, eventCreated };
     });
   }
 
-  private async insertQuest(quest: Quest): Promise<void> {
-    await this.connection.runAsync(
+  private async insertQuest(connection: SqliteConnection, quest: Quest): Promise<void> {
+    await connection.runAsync(
       `INSERT INTO quests (
         id, title, description, type, difficulty, status, created_at, updated_at,
         due_at, due_timezone, scheduled_at, completed_at, priority, notes,
@@ -274,8 +275,8 @@ export class SqliteQuestRepository implements QuestRepository {
     );
   }
 
-  private async writeQuest(quest: Quest): Promise<void> {
-    await this.connection.runAsync(
+  private async writeQuest(connection: SqliteConnection, quest: Quest): Promise<void> {
+    await connection.runAsync(
       `UPDATE quests SET
         title = ?, description = ?, type = ?, difficulty = ?, status = ?,
         created_at = ?, updated_at = ?, due_at = ?, due_timezone = ?, scheduled_at = ?,
@@ -330,8 +331,8 @@ export class SqliteQuestRepository implements QuestRepository {
     ];
   }
 
-  private async insertEvent(event: QuestDomainEvent): Promise<number> {
-    const result = await this.connection.runAsync(
+  private async insertEvent(connection: SqliteConnection, event: QuestDomainEvent): Promise<number> {
+    const result = await connection.runAsync(
       `INSERT INTO domain_events (
         event_id, type, schema_version, aggregate_id, occurrence_id,
         payload_json, occurred_at, created_at, dedupe_key
@@ -350,18 +351,18 @@ export class SqliteQuestRepository implements QuestRepository {
     return result.changes;
   }
 
-  private async syncLinks(quest: Quest): Promise<void> {
-    await this.connection.runAsync('DELETE FROM quest_skill_links WHERE quest_id = ?', quest.id);
-    await this.connection.runAsync('DELETE FROM quest_achievement_links WHERE quest_id = ?', quest.id);
+  private async syncLinks(connection: SqliteConnection, quest: Quest): Promise<void> {
+    await connection.runAsync('DELETE FROM quest_skill_links WHERE quest_id = ?', quest.id);
+    await connection.runAsync('DELETE FROM quest_achievement_links WHERE quest_id = ?', quest.id);
     for (const skillId of quest.skillIds) {
-      await this.connection.runAsync(
+      await connection.runAsync(
         'INSERT INTO quest_skill_links (quest_id, skill_id) VALUES (?, ?)',
         quest.id,
         skillId,
       );
     }
     for (const achievementId of quest.achievementIds) {
-      await this.connection.runAsync(
+      await connection.runAsync(
         'INSERT INTO quest_achievement_links (quest_id, achievement_id) VALUES (?, ?)',
         quest.id,
         achievementId,

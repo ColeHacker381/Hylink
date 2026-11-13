@@ -9,7 +9,8 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "benchmark": "vitest run --config vitest.benchmark.config.ts"
   },
   "dependencies": {
     "@hylink/domain": "workspace:*",

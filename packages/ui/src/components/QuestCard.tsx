@@ -11,9 +11,10 @@ interface QuestCardProps {
   readonly status: QuestStatus | QuestOccurrenceStatus;
   readonly onPress?: () => void;
   readonly onToggleComplete?: () => void;
+  readonly mutationPending?: boolean;
 }
 
-export function QuestCard({ title, detail, status, onPress, onToggleComplete }: QuestCardProps) {
+export function QuestCard({ title, detail, status, onPress, onToggleComplete, mutationPending = false }: QuestCardProps) {
   const statusLabel = status[0]?.toUpperCase() + status.slice(1);
   const completed = status === 'completed';
   return (
@@ -26,8 +27,8 @@ export function QuestCard({ title, detail, status, onPress, onToggleComplete }: 
         <View style={styles.badge}><Text style={styles.badgeText}>{statusLabel}</Text></View>
       </Pressable>
       {onToggleComplete ? (
-        <Pressable accessibilityRole="button" onPress={onToggleComplete} style={styles.action}>
-          <Text style={styles.actionText}>{completed ? 'Reopen' : 'Complete'}</Text>
+        <Pressable accessibilityRole="button" disabled={mutationPending} onPress={onToggleComplete} style={[styles.action, mutationPending && styles.disabled]}>
+          <Text style={styles.actionText}>{mutationPending ? 'Saving…' : completed ? 'Reopen' : 'Complete'}</Text>
         </Pressable>
       ) : null}
     </ParchmentCard>
@@ -43,5 +44,6 @@ const styles = StyleSheet.create({
   badgeText: { color: colors.ink, fontSize: 12, fontWeight: '800' },
   action: { alignItems: 'center', alignSelf: 'flex-start', borderColor: colors.pine, borderRadius: radius.sm, borderWidth: 1.5, justifyContent: 'center', minHeight: 44, paddingHorizontal: spacing.md },
   actionText: { color: colors.pine, fontWeight: '800' },
+  disabled: { opacity: 0.5 },
 });
 

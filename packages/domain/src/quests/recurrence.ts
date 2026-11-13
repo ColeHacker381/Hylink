@@ -18,7 +18,11 @@ function matchesFrequency(
 ): boolean {
   if (frequency === 'daily') return dayOffset % interval === 0;
   if (frequency === 'weekly') return dayOffset % (7 * interval) === 0;
-  return weekdays.includes(weekday);
+  return weekdays.includes(weekday) && Math.floor(dayOffset / 7) % interval === 0;
+}
+
+function calendarDayNumber(parts: { readonly year: number; readonly month: number; readonly day: number }): number {
+  return Math.floor(Date.UTC(parts.year, parts.month - 1, parts.day) / 86_400_000);
 }
 
 export function generateQuestOccurrences(
@@ -31,8 +35,12 @@ export function generateQuestOccurrences(
   const seedParts = getZonedParts(seed, timezone);
   const maximumOccurrences = options.maximumOccurrences ?? 64;
   const occurrences: QuestOccurrence[] = [];
+  const fromParts = getZonedParts(options.from, timezone);
+  const toParts = getZonedParts(options.to, timezone);
+  const firstOffset = Math.max(0, calendarDayNumber(fromParts) - calendarDayNumber(seedParts) - 1);
+  const lastOffset = Math.max(firstOffset, calendarDayNumber(toParts) - calendarDayNumber(seedParts) + 1);
 
-  for (let dayOffset = 0; dayOffset <= 366 && occurrences.length < maximumOccurrences; dayOffset += 1) {
+  for (let dayOffset = firstOffset; dayOffset <= lastOffset && occurrences.length < maximumOccurrences; dayOffset += 1) {
     const wall = addWallDays(seedParts, dayOffset);
     const weekday = new Date(Date.UTC(wall.year, wall.month - 1, wall.day)).getUTCDay();
     if (!matchesFrequency(

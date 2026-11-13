@@ -1,4 +1,5 @@
 import { router, type Href } from 'expo-router';
+import { useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import type { QuestListItem } from '@hylink/domain';
@@ -23,15 +24,17 @@ function DetailRow({ label, value }: { readonly label: string; readonly value: s
   );
 }
 
-function ActionButton({ label, danger = false, onPress }: { readonly label: string; readonly danger?: boolean; readonly onPress: () => void }) {
+function ActionButton({ label, danger = false, disabled = false, onPress }: { readonly label: string; readonly danger?: boolean; readonly disabled?: boolean; readonly onPress: () => void }) {
   return (
-    <Pressable accessibilityRole="button" onPress={onPress} style={[styles.action, danger && styles.dangerAction]}>
+    <Pressable accessibilityRole="button" disabled={disabled} onPress={onPress} style={[styles.action, danger && styles.dangerAction, disabled && styles.disabled]}>
       <Text style={[styles.actionText, danger && styles.dangerText]}>{label}</Text>
     </Pressable>
   );
 }
 
 export function QuestDetailScreen({ id, occurrenceId }: { readonly id: string; readonly occurrenceId?: string }) {
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [mutationError, setMutationError] = useState<string | null>(null);
   const { quest, loading, error } = useQuest(id);
   const { items } = useQuestItems({ view: 'all', sort: 'dueAt' });
   const { archiveQuest, completeQuest, deleteQuest, reopenQuest } = useQuestContext();
@@ -46,6 +49,19 @@ export function QuestDetailScreen({ id, occurrenceId }: { readonly id: string; r
   const selectedStatus = selectedItem ? questItemStatus(selectedItem) : quest.status;
   const preview = rewardByDifficulty[quest.difficulty];
   const scheduleItem: QuestListItem = selectedItem ?? { quest, occurrence: null };
+  const runMutation = async (key: string, task: () => Promise<unknown>, success?: () => void) => {
+    if (pendingAction) return;
+    setPendingAction(key);
+    setMutationError(null);
+    try {
+      await task();
+      success?.();
+    } catch {
+      setMutationError('That change could not be saved. Please try again.');
+    } finally {
+      setPendingAction(null);
+    }
+  };
 
   const confirmDelete = () => {
     Alert.alert(
@@ -57,7 +73,7 @@ export function QuestDetailScreen({ id, occurrenceId }: { readonly id: string; r
           text: 'Delete',
           style: 'destructive',
           onPress: () => {
-            void deleteQuest(id).then(() => router.replace('/journal'));
+            void runMutation('delete', () => deleteQuest(id), () => router.replace('/journal'));
           },
         },
       ],
@@ -85,18 +101,20 @@ export function QuestDetailScreen({ id, occurrenceId }: { readonly id: string; r
         <Text style={styles.body}>{quest.notes ?? 'No notes added.'}</Text>
       </ParchmentCard>
       <View style={styles.actions}>
-        <ActionButton label="Edit" onPress={() => router.push(`/quests/${id}/edit` as Href)} />
+        {mutationError ? <Text accessibilityRole="alert" style={styles.error}>{mutationError}</Text> : null}
+        <ActionButton disabled={Boolean(pendingAction)} label="Edit" onPress={() => router.push(`/quests/${id}/edit` as Href)} />
         {quest.status !== 'archived' ? (
           <ActionButton
-            label={selectedStatus === 'completed' ? 'Reopen' : 'Complete'}
+            disabled={Boolean(pendingAction)}
+            label={pendingAction === 'toggle' ? 'Saving…' : selectedStatus === 'completed' ? 'Reopen' : 'Complete'}
             onPress={() => {
               const action = selectedStatus === 'completed' ? reopenQuest : completeQuest;
-              void action(id, selectedItem?.occurrence?.id);
+              void runMutation('toggle', () => action(id, selectedItem?.occurrence?.id));
             }}
           />
         ) : null}
-        {quest.status !== 'archived' ? <ActionButton label="Archive" onPress={() => void archiveQuest(id)} /> : null}
-        <ActionButton danger label="Delete" onPress={confirmDelete} />
+        {quest.status !== 'archived' ? <ActionButton disabled={Boolean(pendingAction)} label={pendingAction === 'archive' ? 'Saving…' : 'Archive'} onPress={() => void runMutation('archive', () => archiveQuest(id))} /> : null}
+        <ActionButton danger disabled={Boolean(pendingAction)} label={pendingAction === 'delete' ? 'Deleting…' : 'Delete'} onPress={confirmDelete} />
       </View>
       {quest.recurrence ? (
         <View style={styles.occurrences}>
@@ -107,9 +125,11 @@ export function QuestDetailScreen({ id, occurrenceId }: { readonly id: string; r
               title={formatQuestDate(item)}
               detail={item.occurrence?.occurrenceKey ?? 'Quest'}
               status={questItemStatus(item)}
+              mutationPending={pendingAction === (item.occurrence?.id ?? item.quest.id)}
               onToggleComplete={() => {
                 const action = questItemStatus(item) === 'completed' ? reopenQuest : completeQuest;
-                void action(id, item.occurrence?.id);
+                const key = item.occurrence?.id ?? item.quest.id;
+                void runMutation(key, () => action(id, item.occurrence?.id));
               }}
             />
           ))}
@@ -130,6 +150,8 @@ const styles = StyleSheet.create({
   actionText: { color: colors.pine, fontWeight: '800' },
   dangerAction: { borderColor: colors.danger },
   dangerText: { color: colors.danger },
+  disabled: { opacity: 0.5 },
+  error: { color: colors.danger, flexBasis: '100%' },
   occurrences: { gap: spacing.sm },
 });
 

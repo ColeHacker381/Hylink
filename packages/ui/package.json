@@ -5,7 +5,8 @@
   "main": "src/index.ts",
   "types": "src/index.ts",
   "dependencies": {
-    "@hylink/domain": "workspace:*"
+    "@hylink/domain": "workspace:*",
+    "@react-native-community/datetimepicker": "9.2.1"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

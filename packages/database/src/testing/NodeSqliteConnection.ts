@@ -8,6 +8,7 @@ function toNodeValue(value: SqlValue): SQLInputValue {
 
 export class NodeSqliteConnection implements SqliteConnection {
   private readonly database: DatabaseSync;
+  private transactionTail: Promise<void> = Promise.resolve();
 
   constructor(path: string) {
     this.database = new DatabaseSync(path);
@@ -30,14 +31,23 @@ export class NodeSqliteConnection implements SqliteConnection {
     return this.database.prepare(sql).all(...params.map(toNodeValue)) as T[];
   }
 
-  async withTransactionAsync(task: () => Promise<void>): Promise<void> {
-    this.database.exec('BEGIN IMMEDIATE');
+  async withTransactionAsync<T>(task: (transaction: SqliteConnection) => Promise<T>): Promise<T> {
+    const previous = this.transactionTail;
+    let release: () => void = () => {};
+    this.transactionTail = new Promise<void>((resolve) => { release = resolve; });
+    await previous;
     try {
-      await task();
-      this.database.exec('COMMIT');
-    } catch (error) {
-      this.database.exec('ROLLBACK');
-      throw error;
+      this.database.exec('BEGIN IMMEDIATE');
+      try {
+        const result = await task(this);
+        this.database.exec('COMMIT');
+        return result;
+      } catch (error) {
+        this.database.exec('ROLLBACK');
+        throw error;
+      }
+    } finally {
+      release();
     }
   }
 

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 
 import {
   questDifficulties,
@@ -31,39 +32,32 @@ function localTimezone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 }
 
-function dateInputValue(value: string | null | undefined): string {
-  if (!value) return '';
+function initialDate(value: string | null | undefined): Date | null {
+  if (!value) return null;
   const date = new Date(value);
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
-function dateTimeInputValue(value: string | null | undefined): string {
-  if (!value) return '';
+function endOfLocalDay(value: Date | null): string | null {
+  if (!value) return null;
   const date = new Date(value);
-  return `${dateInputValue(value)} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
-}
-
-function parseDate(value: string, endOfDay = false): string | null {
-  if (!value.trim()) return null;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value.trim())) throw new Error('Dates must use YYYY-MM-DD.');
-  const date = new Date(`${value.trim()}T${endOfDay ? '23:59:59' : '12:00:00'}`);
-  if (Number.isNaN(date.getTime())) throw new Error('Enter a valid calendar date.');
+  date.setHours(23, 59, 59, 999);
   return date.toISOString();
 }
 
-function parseDateTime(value: string): string | null {
-  if (!value.trim()) return null;
-  const normalized = value.trim().replace(' ', 'T');
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(normalized)) {
-    throw new Error('Scheduled time must use YYYY-MM-DD HH:mm.');
-  }
-  const date = new Date(normalized);
-  if (Number.isNaN(date.getTime())) throw new Error('Enter a valid scheduled time.');
-  return date.toISOString();
+function mergeDate(current: Date | null, selected: Date): Date {
+  const result = new Date(current ?? selected);
+  result.setFullYear(selected.getFullYear(), selected.getMonth(), selected.getDate());
+  return result;
 }
+
+function mergeTime(current: Date | null, selected: Date): Date {
+  const result = new Date(current ?? selected);
+  result.setHours(selected.getHours(), selected.getMinutes(), 0, 0);
+  return result;
+}
+
+type PickerTarget = 'due' | 'scheduledDate' | 'scheduledTime' | 'recurrenceEnd';
 
 function ChoiceRow<T extends string>({
   label,
@@ -108,12 +102,13 @@ export function QuickAddSheet({
   const [type, setType] = useState<QuestType>(initialQuest?.type ?? 'side');
   const [difficulty, setDifficulty] = useState<QuestDifficulty>(initialQuest?.difficulty ?? 'normal');
   const [priority, setPriority] = useState<QuestPriority | null>(initialQuest?.priority ?? null);
-  const [dueDate, setDueDate] = useState(dateInputValue(initialQuest?.dueAt));
-  const [scheduledAt, setScheduledAt] = useState(dateTimeInputValue(initialQuest?.scheduledAt));
+  const [dueDate, setDueDate] = useState<Date | null>(initialDate(initialQuest?.dueAt));
+  const [scheduledAt, setScheduledAt] = useState<Date | null>(initialDate(initialQuest?.scheduledAt));
   const [notes, setNotes] = useState(initialQuest?.notes ?? '');
   const [recurrence, setRecurrence] = useState<RecurrenceFrequency | null>(initialQuest?.recurrence?.frequency ?? null);
   const [weekdays, setWeekdays] = useState<readonly number[]>(initialQuest?.recurrence?.weekdays ?? []);
-  const [recurrenceEnd, setRecurrenceEnd] = useState(dateInputValue(initialQuest?.recurrence?.endsAt));
+  const [recurrenceEnd, setRecurrenceEnd] = useState<Date | null>(initialDate(initialQuest?.recurrence?.endsAt));
+  const [picker, setPicker] = useState<PickerTarget | null>(null);
   const [advanced, setAdvanced] = useState(Boolean(initialQuest));
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -129,16 +124,16 @@ export function QuickAddSheet({
         description,
         type,
         difficulty,
-        dueAt: parseDate(dueDate, true),
+        dueAt: endOfLocalDay(dueDate),
         dueTimezone: dueDate ? localTimezone() : null,
-        scheduledAt: parseDateTime(scheduledAt),
+        scheduledAt: scheduledAt?.toISOString() ?? null,
         priority,
         notes,
         recurrence: recurrence ? {
           frequency: recurrence,
           interval: 1,
           weekdays: recurrence === 'weekdays' ? weekdays : [],
-          endsAt: parseDate(recurrenceEnd, true),
+          endsAt: endOfLocalDay(recurrenceEnd),
           timezone: localTimezone(),
         } : null,
       });
@@ -147,6 +142,21 @@ export function QuickAddSheet({
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const pickerValue = picker === 'due'
+    ? dueDate
+    : picker === 'recurrenceEnd'
+      ? recurrenceEnd
+      : scheduledAt;
+  const pickerMode = picker === 'scheduledTime' ? 'time' : 'date';
+  const changePicker = (_event: DateTimePickerEvent, selected?: Date) => {
+    if (Platform.OS !== 'ios') setPicker(null);
+    if (!selected || !picker) return;
+    if (picker === 'due') setDueDate(selected);
+    if (picker === 'recurrenceEnd') setRecurrenceEnd(selected);
+    if (picker === 'scheduledDate') setScheduledAt((value) => mergeDate(value, selected));
+    if (picker === 'scheduledTime') setScheduledAt((value) => mergeTime(value, selected));
   };
 
   return (
@@ -185,11 +195,24 @@ export function QuickAddSheet({
               <ChoiceRow label="Priority" options={questPriorities} selected={priority} onSelect={setPriority} />
               <View style={styles.fieldGroup}>
                 <Text style={styles.label}>Due date</Text>
-                <TextInput accessibilityLabel="Due date" onChangeText={setDueDate} placeholder="YYYY-MM-DD" placeholderTextColor={colors.mutedInk} style={styles.input} value={dueDate} />
+                <View style={styles.dateRow}>
+                  <Pressable accessibilityLabel="Choose due date" accessibilityRole="button" onPress={() => setPicker('due')} style={[styles.input, styles.dateButton]}>
+                    <Text style={styles.dateText}>{dueDate ? dueDate.toLocaleDateString() : 'Choose a date'}</Text>
+                  </Pressable>
+                  {dueDate ? <Pressable accessibilityRole="button" onPress={() => setDueDate(null)} style={styles.clearButton}><Text style={styles.clearText}>Clear</Text></Pressable> : null}
+                </View>
               </View>
               <View style={styles.fieldGroup}>
                 <Text style={styles.label}>Scheduled time</Text>
-                <TextInput accessibilityLabel="Scheduled time" onChangeText={setScheduledAt} placeholder="YYYY-MM-DD HH:mm" placeholderTextColor={colors.mutedInk} style={styles.input} value={scheduledAt} />
+                <View style={styles.dateRow}>
+                  <Pressable accessibilityLabel="Choose scheduled date" accessibilityRole="button" onPress={() => setPicker('scheduledDate')} style={[styles.input, styles.dateButton]}>
+                    <Text style={styles.dateText}>{scheduledAt ? scheduledAt.toLocaleDateString() : 'Choose date'}</Text>
+                  </Pressable>
+                  <Pressable accessibilityLabel="Choose scheduled time" accessibilityRole="button" onPress={() => setPicker('scheduledTime')} style={[styles.input, styles.dateButton]}>
+                    <Text style={styles.dateText}>{scheduledAt ? scheduledAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'Choose time'}</Text>
+                  </Pressable>
+                  {scheduledAt ? <Pressable accessibilityRole="button" onPress={() => setScheduledAt(null)} style={styles.clearButton}><Text style={styles.clearText}>Clear</Text></Pressable> : null}
+                </View>
               </View>
               <View style={styles.fieldGroup}>
                 <Text style={styles.label}>Recurrence</Text>
@@ -222,13 +245,29 @@ export function QuickAddSheet({
               {recurrence ? (
                 <View style={styles.fieldGroup}>
                   <Text style={styles.label}>Recurrence ends</Text>
-                  <TextInput accessibilityLabel="Recurrence end date" onChangeText={setRecurrenceEnd} placeholder="YYYY-MM-DD (optional)" placeholderTextColor={colors.mutedInk} style={styles.input} value={recurrenceEnd} />
+                  <View style={styles.dateRow}>
+                    <Pressable accessibilityLabel="Choose recurrence end date" accessibilityRole="button" onPress={() => setPicker('recurrenceEnd')} style={[styles.input, styles.dateButton]}>
+                      <Text style={styles.dateText}>{recurrenceEnd ? recurrenceEnd.toLocaleDateString() : 'No end date'}</Text>
+                    </Pressable>
+                    {recurrenceEnd ? <Pressable accessibilityRole="button" onPress={() => setRecurrenceEnd(null)} style={styles.clearButton}><Text style={styles.clearText}>Clear</Text></Pressable> : null}
+                  </View>
                 </View>
               ) : null}
               <View style={styles.fieldGroup}>
                 <Text style={styles.label}>Notes</Text>
                 <TextInput accessibilityLabel="Quest notes" multiline onChangeText={setNotes} style={[styles.input, styles.multiline]} value={notes} />
               </View>
+            </View>
+          ) : null}
+          {picker ? (
+            <View style={styles.pickerPanel}>
+              <DateTimePicker
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                mode={pickerMode}
+                onChange={changePicker}
+                value={pickerValue ?? new Date()}
+              />
+              {Platform.OS === 'ios' ? <Pressable accessibilityRole="button" onPress={() => setPicker(null)} style={styles.doneButton}><Text style={styles.primaryText}>Done</Text></Pressable> : null}
             </View>
           ) : null}
           {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
@@ -261,6 +300,13 @@ const styles = StyleSheet.create({
   fieldGroup: { gap: spacing.xs },
   label: { color: colors.ink, fontSize: 14, fontWeight: '700' },
   input: { backgroundColor: colors.parchmentLight, borderColor: colors.bronze, borderRadius: radius.md, borderWidth: 2, color: colors.ink, fontSize: 17, minHeight: 52, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
+  dateRow: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
+  dateButton: { justifyContent: 'center', minWidth: 140 },
+  dateText: { color: colors.ink, fontSize: 16 },
+  clearButton: { justifyContent: 'center', minHeight: 44, paddingHorizontal: spacing.sm },
+  clearText: { color: colors.danger, fontWeight: '700' },
+  pickerPanel: { backgroundColor: colors.parchmentLight, borderColor: colors.bronze, borderRadius: radius.md, borderWidth: 1, padding: spacing.sm },
+  doneButton: { alignItems: 'center', alignSelf: 'flex-end', backgroundColor: colors.pine, borderRadius: radius.sm, justifyContent: 'center', minHeight: 44, paddingHorizontal: spacing.md },
   multiline: { minHeight: 88, textAlignVertical: 'top' },
   advancedButton: { alignItems: 'center', alignSelf: 'flex-start', minHeight: 44, justifyContent: 'center' },
   advancedText: { color: colors.pine, fontSize: 16, fontWeight: '800' },
