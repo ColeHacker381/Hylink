@@ -1,0 +1,15 @@
+packages:
+  - apps/*
+  - packages/*
+
+storeDir: .pnpm-store
+cacheDir: .pnpm-cache
+
+allowBuilds:
+  '@parcel/watcher': true
+
+minimumReleaseAgeExclude:
+  - expo@58.0.25
+
+onlyBuiltDependencies:
+  - esbuild
