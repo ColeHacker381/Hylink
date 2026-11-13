@@ -1,0 +1,32 @@
+{
+  "name": "@hylink/ui",
+  "version": "0.1.0",
+  "private": true,
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "dependencies": {
+    "@hylink/domain": "workspace:*"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "jest --config jest.config.cjs --runInBand"
+  },
+  "peerDependencies": {
+    "react": "19.3.0",
+    "react-native": "0.88.1",
+    "react-native-safe-area-context": "5.11.1"
+  },
+  "devDependencies": {
+    "@testing-library/react-native": "14.1.0",
+    "@types/jest": "30.0.0",
+    "@types/react": "19.3.0",
+    "jest": "30.5.2",
+    "jest-expo": "58.0.14",
+    "react": "19.3.0",
+    "react-native": "0.88.1",
+    "react-native-safe-area-context": "5.11.1",
+    "test-renderer": "1.3.1",
+    "typescript": "6.0.3"
+  }
+}
+

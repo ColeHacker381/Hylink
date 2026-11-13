@@ -1,0 +1,27 @@
+{
+  "expo": {
+    "name": "Hylink",
+    "slug": "hylink",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "hylink",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "app.hylink.mobile"
+    },
+    "android": {
+      "package": "app.hylink.mobile",
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
+    "plugins": ["expo-router"],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
+
