@@ -7,6 +7,8 @@ function toExpoValue(value: SqlValue): SQLiteBindValue {
 }
 
 export class ExpoSqliteConnection implements SqliteConnection {
+  private transactionTail: Promise<void> = Promise.resolve();
+
   constructor(private readonly database: SQLiteDatabase) {}
 
   async execAsync(sql: string): Promise<void> {
@@ -26,8 +28,26 @@ export class ExpoSqliteConnection implements SqliteConnection {
     return this.database.getAllAsync<T>(sql, ...params.map(toExpoValue));
   }
 
-  async withTransactionAsync(task: () => Promise<void>): Promise<void> {
-    await this.database.withTransactionAsync(task);
+  async withTransactionAsync<T>(task: (transaction: SqliteConnection) => Promise<T>): Promise<T> {
+    const previous = this.transactionTail;
+    let release: () => void = () => {};
+    this.transactionTail = new Promise<void>((resolve) => { release = resolve; });
+    await previous;
+    try {
+      let result: T | undefined;
+      if (typeof document !== 'undefined') {
+        await this.database.withTransactionAsync(async () => {
+          result = await task(this);
+        });
+      } else {
+        await this.database.withExclusiveTransactionAsync(async (transaction) => {
+          result = await task(new ExpoSqliteConnection(transaction));
+        });
+      }
+      return result as T;
+    } finally {
+      release();
+    }
   }
 
   async closeAsync(): Promise<void> {

@@ -53,5 +53,45 @@ describe('recurrence generation', () => {
     ]);
     expect(new Set(occurrences.map((item) => item.occurrenceKey)).size).toBe(4);
   });
+
+  it('jumps directly to a requested window years after the recurrence seed', () => {
+    const quest: Quest = {
+      ...recurringQuest,
+      createdAt: '2020-01-01T14:00:00.000Z',
+      scheduledAt: '2020-01-01T14:00:00.000Z',
+      recurrence: { ...recurringQuest.recurrence!, endsAt: null },
+    };
+    const occurrences = generateQuestOccurrences(quest, {
+      from: '2026-11-01T00:00:00.000Z',
+      to: '2026-11-04T23:59:59.000Z',
+      now: '2026-11-01T00:00:00.000Z',
+      createId: () => crypto.randomUUID(),
+    });
+    expect(occurrences.map((item) => item.scheduledFor)).toEqual([
+      '2026-11-01T14:00:00.000Z',
+      '2026-11-02T14:00:00.000Z',
+      '2026-11-03T14:00:00.000Z',
+      '2026-11-04T14:00:00.000Z',
+    ]);
+  });
+
+  it('keeps interval-based weekly occurrences aligned to the original seed', () => {
+    const quest: Quest = {
+      ...recurringQuest,
+      scheduledAt: '2020-01-06T14:00:00.000Z',
+      recurrence: { ...recurringQuest.recurrence!, frequency: 'weekly', interval: 2, endsAt: null },
+    };
+    const occurrences = generateQuestOccurrences(quest, {
+      from: '2026-10-01T00:00:00.000Z',
+      to: '2026-11-15T23:59:59.000Z',
+      now: '2026-10-01T00:00:00.000Z',
+      createId: () => crypto.randomUUID(),
+    });
+    expect(occurrences.map((item) => item.scheduledFor)).toEqual([
+      '2026-10-05T13:00:00.000Z',
+      '2026-10-19T13:00:00.000Z',
+      '2026-11-02T14:00:00.000Z',
+    ]);
+  });
 });
 

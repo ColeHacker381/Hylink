@@ -17,6 +17,7 @@ Use `pnpm web` for a browser preview. The mobile app contains Home, Journal, Wor
 - Journal views cover Today, Upcoming, All Quests, Completed, and Archived with type, difficulty, priority, status, and sorting controls.
 - Open a quest to edit, complete or reopen it, archive it, or soft-delete it with confirmation.
 - Daily, weekly, and selected-weekday recurrence is generated in a bounded rolling window. Each occurrence is completed independently.
+- Native date and time pickers provide local calendar scheduling without typed ISO timestamps.
 - Home reads real today, overdue, upcoming, and completed data from SQLite. Character progression remains clearly labeled preview data.
 
 The database is created automatically as `hylink.db` on first launch and versioned migrations run during startup. See [Persistent quests](docs/PERSISTENT_QUESTS.md) for schema and migration details.
@@ -27,9 +28,10 @@ The database is created automatically as `hylink.db` on first launch and version
 pnpm typecheck
 pnpm lint
 pnpm test
+pnpm benchmark:quests
 ```
 
-Domain and SQLite integration tests run under Vitest. Reusable React Native components run under Jest Expo with React Native Testing Library. Database tests use isolated temporary SQLite files and do not write a project database.
+Domain and SQLite integration tests run under Vitest. Reusable React Native components run under Jest Expo with React Native Testing Library. Database tests use isolated temporary SQLite files and do not write a project database. The benchmark command likewise uses a temporary database and reports Node.js measurements only; it is not an iPhone performance claim.
 
 ## Native platform notes
 

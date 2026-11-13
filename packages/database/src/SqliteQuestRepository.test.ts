@@ -19,6 +19,22 @@ function idFactory() {
   };
 }
 
+function failCompletionEventWrites(base: SqliteConnection): SqliteConnection {
+  const wrap = (connection: SqliteConnection): SqliteConnection => ({
+    execAsync: (sql) => connection.execAsync(sql),
+    runAsync: (sql, ...params) => {
+      if (sql.includes('INSERT INTO domain_events') && params[1] === 'quest.completed') {
+        throw new Error('intentional event failure');
+      }
+      return connection.runAsync(sql, ...params);
+    },
+    getFirstAsync: <T,>(sql: string, ...params: readonly import('./connection').SqlValue[]) => connection.getFirstAsync<T>(sql, ...params),
+    getAllAsync: <T,>(sql: string, ...params: readonly import('./connection').SqlValue[]) => connection.getAllAsync<T>(sql, ...params),
+    withTransactionAsync: <T,>(task: (transaction: SqliteConnection) => Promise<T>) => connection.withTransactionAsync((transaction) => task(wrap(transaction))),
+  });
+  return wrap(base);
+}
+
 describe('persistent quest database', () => {
   let directory: string;
   let path: string;
@@ -141,9 +157,77 @@ describe('persistent quest database', () => {
     expect((await repository.getQuest(quest.id))?.status).toBe('active');
   });
 
+  it('completes a recurring occurrence during concurrent dashboard refreshes', async () => {
+    const quest = await service.createQuest({
+      title: 'Physical-device regression',
+      scheduledAt: '2026-11-13T14:00:00.000Z',
+      recurrence: { frequency: 'daily', interval: 1, weekdays: [], endsAt: null, timezone: 'America/New_York' },
+    });
+    const occurrence = (await service.listQuests({ view: 'all', now: currentTime, timezone: 'America/New_York' }))[0]?.occurrence;
+    expect(occurrence).not.toBeNull();
+
+    await Promise.all([
+      service.getDashboard(currentTime, 'America/New_York'),
+      service.completeQuest(quest.id, occurrence?.id),
+      service.listQuests({ view: 'today', now: currentTime, timezone: 'America/New_York' }),
+    ]);
+
+    expect((await repository.getOccurrence(occurrence?.id ?? ''))?.status).toBe('completed');
+    const events = await repository.listDomainEvents(quest.id);
+    expect(events.filter((event) => event.type === 'quest.completed')).toHaveLength(1);
+  });
+
+  it('serializes concurrent completion attempts without duplicate events', async () => {
+    const quest = await service.createQuest({ title: 'Complete once' });
+    await Promise.all(Array.from({ length: 8 }, () => service.completeQuest(quest.id)));
+    const events = await repository.listDomainEvents(quest.id);
+    expect(events.filter((event) => event.type === 'quest.completed')).toHaveLength(1);
+  });
+
+  it('records one event for each valid completion after a reopen', async () => {
+    const quest = await service.createQuest({ title: 'Repeatable transition' });
+    await service.completeQuest(quest.id);
+    await service.reopenQuest(quest.id);
+    await service.completeQuest(quest.id);
+    const events = await repository.listDomainEvents(quest.id);
+    expect(events.filter((event) => event.type === 'quest.completed')).toHaveLength(2);
+  });
+
+  it('rolls back a completion when its event cannot be inserted', async () => {
+    const quest = await service.createQuest({ title: 'Atomic completion' });
+    const failingRepository = new SqliteQuestRepository(failCompletionEventWrites(connection));
+    const failingService = new QuestService({ repository: failingRepository, now: () => currentTime, createId: idFactory() });
+
+    await expect(failingService.completeQuest(quest.id)).rejects.toBeInstanceOf(QuestPersistenceError);
+    expect((await repository.getQuest(quest.id))?.status).toBe('active');
+    const events = await repository.listDomainEvents(quest.id);
+    expect(events.filter((event) => event.type === 'quest.completed')).toHaveLength(0);
+  });
+
+  it('preserves completed history while replacing obsolete future recurrence instances', async () => {
+    const quest = await service.createQuest({
+      title: 'Changing rhythm',
+      scheduledAt: '2026-11-13T14:00:00.000Z',
+      recurrence: { frequency: 'daily', interval: 1, weekdays: [], endsAt: null, timezone: 'America/New_York' },
+    });
+    const daily = await service.listQuests({ view: 'all', now: currentTime, timezone: 'America/New_York' });
+    const first = daily.find((item) => item.quest.id === quest.id)?.occurrence;
+    await service.completeQuest(quest.id, first?.id);
+    await service.updateQuest(quest.id, {
+      recurrence: { frequency: 'weekly', interval: 1, weekdays: [], endsAt: null, timezone: 'America/New_York' },
+    });
+
+    const updated = (await service.listQuests({ view: 'all', now: currentTime, timezone: 'America/New_York' }))
+      .filter((item) => item.quest.id === quest.id);
+    expect(updated.some((item) => item.occurrence?.id === first?.id && item.occurrence?.status === 'completed')).toBe(true);
+    expect(updated.filter((item): item is typeof item & { occurrence: NonNullable<typeof item.occurrence> } => item.occurrence?.status === 'active')
+      .every((item) => new Date(item.occurrence.scheduledFor).getUTCDay() === 5)).toBe(true);
+  });
+
   it('rejects empty and invalid quest inputs', async () => {
     await expect(service.createQuest({ title: '   ' })).rejects.toBeInstanceOf(QuestValidationError);
     await expect(service.createQuest({ title: 'Bad date', dueAt: 'not-a-date' })).rejects.toBeInstanceOf(QuestValidationError);
+    await expect(service.createQuest({ title: 'Impossible date', dueAt: '2026-02-30T12:00:00.000Z' })).rejects.toBeInstanceOf(QuestValidationError);
   });
 
   it('turns low-level database failures into a stable persistence error', async () => {

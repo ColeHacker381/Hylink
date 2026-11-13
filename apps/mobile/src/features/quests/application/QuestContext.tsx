@@ -99,11 +99,14 @@ export function useQuestContext(): QuestContextValue {
 
 export function useQuestItems(filters: QuestFilters) {
   const { service, revision, loading: contextLoading, error: contextError } = useQuestContext();
-  const [items, setItems] = useState<readonly QuestListItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const filterKey = JSON.stringify(filters);
   const stableFilters = useMemo(() => JSON.parse(filterKey) as QuestFilters, [filterKey]);
+  const queryKey = `${revision}:${filterKey}`;
+  const [result, setResult] = useState<{
+    readonly key: string;
+    readonly items: readonly QuestListItem[];
+    readonly error: string | null;
+  }>({ key: '', items: [], error: null });
 
   useEffect(() => {
     let active = true;
@@ -111,13 +114,17 @@ export function useQuestItems(filters: QuestFilters) {
       return () => { active = false; };
     }
     service.listQuests(stableFilters)
-      .then((result) => { if (active) setItems(result); })
-      .catch((reason: unknown) => { if (active) setError(errorMessage(reason)); })
-      .finally(() => { if (active) setLoading(false); });
+      .then((items) => { if (active) setResult({ key: queryKey, items, error: null }); })
+      .catch((reason: unknown) => { if (active) setResult({ key: queryKey, items: [], error: errorMessage(reason) }); });
     return () => { active = false; };
-  }, [revision, service, stableFilters]);
+  }, [queryKey, service, stableFilters]);
 
-  return { items, loading: service ? loading : contextLoading, error: contextError ?? error };
+  const current = result.key === queryKey;
+  return {
+    items: current ? result.items : [],
+    loading: service ? !current : contextLoading,
+    error: contextError ?? (current ? result.error : null),
+  };
 }
 
 export function useQuest(id: string | undefined) {

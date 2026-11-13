@@ -35,7 +35,19 @@ function optionalText(value: string | null | undefined): string | null {
 }
 
 function assertIso(value: string | null | undefined, label: string): void {
-  if (value && Number.isNaN(Date.parse(value))) throw new QuestValidationError(`${label} must be a valid ISO 8601 timestamp.`);
+  if (!value) return;
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,3})?(Z|[+-]\d{2}:\d{2})$/.exec(value);
+  if (!match || Number.isNaN(Date.parse(value))) {
+    throw new QuestValidationError(`${label} must be a valid ISO 8601 timestamp.`);
+  }
+  const [, yearText, monthText, dayText, hourText, minuteText, secondText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const validDay = month >= 1 && month <= 12 && day >= 1 && day <= new Date(Date.UTC(year, month, 0)).getUTCDate();
+  if (!validDay || Number(hourText) > 23 || Number(minuteText) > 59 || Number(secondText) > 59) {
+    throw new QuestValidationError(`${label} must contain a valid calendar date and time.`);
+  }
 }
 
 function validateRecurrence(recurrence: RecurrenceRule | null | undefined): void {
@@ -129,7 +141,10 @@ export class QuestService {
         });
         await this.repository.saveOccurrences(generated);
         const occurrences = await this.repository.listOccurrences(quest.id, horizonStart, horizonEnd);
-        items.push(...occurrences.map((occurrence) => ({ quest, occurrence })));
+        const currentKeys = new Set(generated.map((occurrence) => occurrence.occurrenceKey));
+        items.push(...occurrences
+          .filter((occurrence) => occurrence.status === 'completed' || currentKeys.has(occurrence.occurrenceKey))
+          .map((occurrence) => ({ quest, occurrence })));
       } else {
         items.push({ quest, occurrence: null });
       }
@@ -253,8 +268,9 @@ export class QuestService {
     timestamp: string,
     payload: Readonly<Record<string, unknown>>,
   ): QuestDomainEvent {
+    const eventId = this.createId();
     return {
-      eventId: this.createId(),
+      eventId,
       type,
       schemaVersion: 1,
       aggregateId,
@@ -262,7 +278,7 @@ export class QuestService {
       payload,
       occurredAt: timestamp,
       createdAt: timestamp,
-      dedupeKey: `${type}:${aggregateId}:${occurrenceId ?? 'quest'}:${timestamp}`,
+      dedupeKey: `${type}:${aggregateId}:${occurrenceId ?? 'quest'}:${eventId}`,
     };
   }
 }

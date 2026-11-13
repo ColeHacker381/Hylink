@@ -36,4 +36,21 @@ describe('QuestCard', () => {
     await fireEvent.press(screen.getByRole('button', { name: 'Reopen' }));
     expect(onToggleComplete).toHaveBeenCalledTimes(1);
   });
+
+  it('disables repeated lifecycle actions while persistence is pending', async () => {
+    const onToggleComplete = jest.fn();
+    await render(
+      <QuestCard
+        detail="Due today"
+        mutationPending
+        status="active"
+        title="Only once"
+        onToggleComplete={onToggleComplete}
+      />,
+    );
+    const action = screen.getByRole('button', { name: 'Saving…' });
+    expect(action).toBeDisabled();
+    await fireEvent.press(action);
+    expect(onToggleComplete).not.toHaveBeenCalled();
+  });
 });

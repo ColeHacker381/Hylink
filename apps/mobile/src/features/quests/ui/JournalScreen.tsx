@@ -64,6 +64,8 @@ export function JournalScreen() {
   const [status, setStatus] = useState<QuestStatus | null>(null);
   const [sort, setSort] = useState<QuestSort>('dueAt');
   const [showFilters, setShowFilters] = useState(false);
+  const [pendingOccurrence, setPendingOccurrence] = useState<string | null>(null);
+  const [mutationError, setMutationError] = useState<string | null>(null);
   const filters = useMemo<QuestFilters>(() => ({
     view,
     sort,
@@ -102,6 +104,7 @@ export function JournalScreen() {
       ) : null}
       {loading ? <Text style={styles.notice}>Reading your journal…</Text> : null}
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+      {mutationError ? <Text accessibilityRole="alert" style={styles.error}>{mutationError}</Text> : null}
       {!loading && !error && items.length === 0 ? (
         <EmptyState title={`No ${views.find((item) => item.value === view)?.label.toLowerCase() ?? 'quests'}`} message="Use the + button to capture a new quest." />
       ) : null}
@@ -114,11 +117,18 @@ export function JournalScreen() {
             title={item.quest.title}
             detail={`${formatQuestDate(item)} · ${item.quest.difficulty}`}
             status={statusValue}
+            mutationPending={pendingOccurrence === (occurrenceId ?? item.quest.id)}
             onPress={() => router.push(`/quests/${item.quest.id}${occurrenceId ? `?occurrenceId=${occurrenceId}` : ''}` as Href)}
             {...(item.quest.status !== 'archived' ? {
               onToggleComplete: () => {
+                const mutationKey = occurrenceId ?? item.quest.id;
+                if (pendingOccurrence) return;
                 const action = statusValue === 'completed' ? reopenQuest : completeQuest;
-                void action(item.quest.id, occurrenceId);
+                setPendingOccurrence(mutationKey);
+                setMutationError(null);
+                action(item.quest.id, occurrenceId)
+                  .catch(() => setMutationError(`Could not ${statusValue === 'completed' ? 'reopen' : 'complete'} this quest. Please try again.`))
+                  .finally(() => setPendingOccurrence(null));
               },
             } : {})}
           />
